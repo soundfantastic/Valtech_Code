@@ -1,0 +1,51 @@
+
+#import <UIKit/UIKit.h>
+#import <objc/runtime.h>
+
+typedef void(^CGDraw)(UIView* protoView, CGContextRef graphicContext); //Drawing block
+typedef void(^TouchesDelegate)(UIView* sender, NSSet* touches, UIEvent* event); //Touches delegate block
+
+@implementation UIView(Custom)
+static int32_t __Protoview_instance_count__ = 0;
+//Dinamicly create UIView with drawing and touches delegate block
++  (id) withCGBlock:(CGDraw)drawingBlock
+      touchDelegate:(TouchesDelegate)touchesDelegate
+              frame:(CGRect)frame {
+    const char* __Protoview_name__ = [[NSString stringWithFormat:@"Protoview_%d", ++__Protoview_instance_count__] UTF8String];
+    Class __Protoview__ = objc_allocateClassPair([UIView class], __Protoview_name__, 0);
+    class_addMethod(__Protoview__, @selector(drawRect:), imp_implementationWithBlock(^(id __self__, CGRect __dirtyRect__) {
+        if(drawingBlock) { drawingBlock(__self__, UIGraphicsGetCurrentContext()); }
+    }), @encode(CGRect));
+    UIView* protoview = [[__Protoview__ alloc] initWithFrame:frame];
+    if(touchesDelegate) { [__Protoview__ view:protoview addTouchesDelegate:touchesDelegate]; }
+    return protoview;
+}
+
+//Inject touch delegate block to any UIView
++ (void) view:(UIView*)view addTouchesDelegate:(TouchesDelegate)touchesDelegate  {
+    Class viewClass = [view class];
+    Class superView = class_getSuperclass(viewClass);
+    IMP func = imp_implementationWithBlock(^(UIView* sender, NSSet* set, UIEvent* event) {
+        if(touchesDelegate) { touchesDelegate(sender, set, event); }
+    });
+    class_addMethod(viewClass,
+                    @selector(touchesBegan:withEvent:),
+                    func,
+                    method_getTypeEncoding(class_getInstanceMethod(superView, @selector(touchesBegan:withEvent:))));
+    
+    class_addMethod(viewClass,
+                    @selector(touchesMoved:withEvent:),
+                    func,
+                    method_getTypeEncoding(class_getInstanceMethod(superView, @selector(touchesMoved:withEvent:))));
+    
+    class_addMethod(viewClass,
+                    @selector(touchesEnded:withEvent:),
+                    func,
+                    method_getTypeEncoding(class_getInstanceMethod(superView, @selector(touchesEnded:withEvent:))));
+    
+    class_addMethod(viewClass,
+                    @selector(touchesCancelled:withEvent:),
+                    func,
+                    method_getTypeEncoding(class_getInstanceMethod(superView, @selector(touchesCancelled:withEvent:))));
+}
+@end
